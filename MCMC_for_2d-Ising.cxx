@@ -1,8 +1,3 @@
-//計算時間の計測。乱数のリセットとエネルギーの計算を削除している。
-//bin数
-//IF文の中を軽くなった。
-//ising.cxxと同じ計算結果を与えることを確認済み。
-
 # include <iostream>
 # include <math.h>
 # include <iomanip>
@@ -12,13 +7,11 @@
 # include <stdio.h>
 # include <limits.h>
 
+//This calulate the specific_heat of the 2-d square Ising model whose lattice-size is 50*50.
 
 using namespace std;
-//std::coutのstd書かなくていい
 
-//N,TIME,filename,l,T_iは手で直すこと。
-
-#define N 50 //格子の数
+#define N 50 //system size
 #define TIME 100000000
 #define step 6
 #define seed 3
@@ -27,59 +20,47 @@ using namespace std;
 #define T_f 2.32
 #define burn_in 2000
 
-#define J 1.0//結合定数(H=-Jx_ix_i+1)
+#define J 1.0//coupling constant
 
 int a[N][N];
 
-//初期条件の設定
 void initial();
-//市松模様のモンテカルロ
 void monte_iti_even(double &,double &,double &);
-//市松模様のモンテカルロを、エネルギーの計算なしで行う(burn_inで用いる)
 void monte_iti_even_non_energy(double &,double &);
-//エネルギーの計算
 void energy_cal(double &);
-//全体の挙動
 void work_even(double &,double &,double &);
-//乱数の初期値を与える
 void rand_set();
-//乱数の初期化
 void rand_reset();
 
 
-//random_device rnd;
 mt19937 mt(seed);
 uniform_real_distribution<double> rand_dis(0.0, 1.0);
 
 //-----
-//乱数生成のための
 #define p 19937
 #define q 7083//(x^p+x^q+1)
 #define length 31
 
 
-//y[]は実際に作る乱数列
-int l=N*N+p;// lはy[i]の配列のサイズ
+//y[] have randum numbers
+int l=N*N+p;// size of y[i]
 unsigned int y[22437];//N*N + p
 
-double run=0;//乱数
-int set=0;//y[i]の引数。
+double run=0;//
+int set=0;//index of y[i]
 //-------
 
-
-//ファイルに出力するために使う関数。全体での比熱をファイルに出力する。
 ofstream outputfile("N=50.txt");
-//ファイルに出力するために使う関数。binごとの比熱をファイルに出力する。
 ofstream outputfile_2("N=50_bin.txt");
 
-//binごとに比熱を計算したいため定義する、あとで使う指数。workの外でも構わないが、一応ここに。
+//for calulate specific_heat each bins
 int BIN_TIME = TIME/bin;
 
 
 int main() {
 
   double heat_cap=0;
-  double temp = T_i;//温度
+  double temp = T_i;
   double beta;
   clock_t start,end;
 
@@ -97,7 +78,7 @@ int main() {
       temp += (T_f - T_i) / step;
     }
     end = clock();
-    printf("%.2f秒かかりました\n",(double)(end-start)/CLOCKS_PER_SEC);
+    printf("It takes %.2f second\n",(double)(end-start)/CLOCKS_PER_SEC);
   }
   else{
     cout <<"odd N is unavailable"<<endl;
@@ -106,57 +87,46 @@ int main() {
 }
 
 void work_even(double & temp,double & beta,double &heat_cap){
-  //物理量の設定
+  //energy
   double energy=0;
   double energy_now=0;
   double energy_sum=0;
   double ene_2=0;
   double ene_2_ave=0;
 
-  //binごとの物理量の計算
+  //thermodynamics proparties for bin
   double heat_cap_bin=0;
   double energy_bin=0;
   double energy_sum_bin=0;
   double ene_2_bin=0;
   double ene_2_ave_bin=0;
 
+  set = p;
 
-  set = p;//初期条件以外での乱数を
-
-  //スピンのフリップを判定する際の指数の値
   double r_a;
   double r_b;
 
-
-  //周囲の４つと、フリップ前の対象のスピンの向きが同じ場合,エネルギーは＋８J変化する。
+  //energy_change_1
   r_a = exp(-8*J*beta);
-  //周囲の３つと、フリップ前の対象のスピンの向きが同じ場合,エネルギーは＋４J変化する。
+  //energy_change_2
   r_b = exp(-4*J*beta);
 
-
-
-  //初期条件
   initial();
 
-  //ここでburn_inを行う
+  //burn_in
   for (int i = 0; i < burn_in; i++) {
   monte_iti_even_non_energy(r_a,r_b);
   rand_reset();
   set = p;
 }
 
-  //エネルギーの初期状態を決める。
+  //initial state of energy
   energy_cal(energy_now);
-//energy_nowが、モンテカルロステップ内でのエネルギーの二乗になる。
 
-
-//市松模様のモンテカルロ。フリップが終わったところでenegy_nowにその配位でのエネルギーを代入してある。
-
-//モンテカルロ(市松模様)
+//MCMC
 for (int i=0; i < TIME; i++) {
-  //毎ステップごとにエネルギーを計算して、それを足しあげる。
   monte_iti_even(r_a,r_b,energy_now);
-  //ここでエネルギーを代入。
+
   energy_sum += energy_now;
   energy_sum_bin += energy_now;
   ene_2 += energy_now * energy_now;
@@ -164,25 +134,15 @@ for (int i=0; i < TIME; i++) {
   rand_reset();
   set = p;
 
-  //binごとに比熱を計算して出力する
-  //そのためには、平均をとるために、BIN_TIME個のエネルギーを持ってきてそれの和を作って、適宜リセットする
-  //energy_calの部分でbinごとでのエネルギーの和を用意する必要あり
-
-
+  //calulation in bins
   if((i+1) % BIN_TIME == 0){
-  //BIN_TIME個のエネルギーで和を
-
-  //エネルギーの平均値
   energy_bin=1/(double)BIN_TIME*energy_sum_bin;
-  //エネルギーの二乗平均
   ene_2_ave_bin=1/(double)BIN_TIME*ene_2_bin;
 
-  //比熱の計算, (二乗の期待値)−(期待値の二乗)
+  //specific_heat
   heat_cap_bin=beta*beta * ( ene_2_ave_bin - energy_bin*energy_bin )/(N*N);
-  //binごとの比熱は、全体とは別のファイルに出力しておく
-  outputfile_2 <<temp<<" "<<heat_cap_bin<<endl;
 
-  //binごとに別々で比熱を計算するため、ここでリセット
+  outputfile_2 <<temp<<" "<<heat_cap_bin<<endl;
   energy_sum_bin=0;
   ene_2_bin=0;
 }
@@ -191,26 +151,16 @@ for (int i=0; i < TIME; i++) {
 }
 
 
-//ここで物理量を出力
-//エネルギーの平均値
 energy=1/(double)TIME*energy_sum;
-//エネルギーの二乗平均
 ene_2_ave=1/(double)TIME*ene_2;
 
-//比熱の計算, (二乗の期待値)−(期待値の二乗)
 heat_cap=beta*beta * ( ene_2_ave - energy*energy )/(N*N);
-
 
 cout << "energy is "<<energy<<endl;
 cout << "Heat capacity is　"<<heat_cap<< endl;
-
-
 }
 
 void initial(){
-  //初期状態をランダムに決定する。
-  //  cout << "initial state is"<<endl;
-
   for (int i = 0; i < N; i++) {
     for (int j = 0; j < N; j++) {
       double b = rand_dis(mt);
@@ -219,26 +169,20 @@ void initial(){
       } else {
         a[i][j] = -1;
       }
-      //    cout <<setw(2)<<right<< a[i][j] << "  ";
     }
-    //  cout << endl;
   }
-  //cout << "and then" << endl;
 }
 
 void monte_iti_even_non_energy(double & r_a, double & r_b){
-  //around は注目しているスピンの周囲のスピンの合計
   int around = 0;
   double r_1 = 0;
   double r_2 = 0;
-  //１つフリップさせた時にエネルギーが上がるかどうかの指標がr。
 
-  double b=0;//フリップに使う乱数
+  double b=0;
   double N_half = N/2;
 
 
   for (int i = 0; i < N; i++) {
-    //配列の列の部分を先に計算しておく。
     int row_1 = (i - 1 + N) % N;
     int row_2 = (i + 1) % N;
 
